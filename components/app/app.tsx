@@ -28,9 +28,18 @@ interface AppProps {
 
 export function App({ appConfig }: AppProps) {
   const tokenSource = useMemo(() => {
-    return typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string'
-      ? getSandboxTokenSource(appConfig)
-      : TokenSource.endpoint('/api/token');
+    if (typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string') {
+      return getSandboxTokenSource(appConfig);
+    }
+    // Forward ?code=... to the token route, which refuses to mint tokens
+    // without it in production. See app/api/token/route.ts.
+    const code =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('code')
+        : null;
+    return TokenSource.endpoint(
+      code ? `/api/token?code=${encodeURIComponent(code)}` : '/api/token'
+    );
   }, [appConfig]);
 
   const session = useSession(

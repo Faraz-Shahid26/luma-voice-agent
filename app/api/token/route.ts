@@ -13,16 +13,41 @@ type ConnectionDetails = {
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
+const ACCESS_CODE = process.env.ROOM_ACCESS_CODE;
 
 // don't cache the results
 export const revalidate = 0;
 
+/** Constant-time comparison, so the code can't be recovered byte-by-byte. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 export async function POST(req: Request) {
-  // make an exception for the vercel preview environment
-  if (process.env.NODE_ENV !== 'development' && process.env.IS_VERCEL_PREVIEW !== 'true') {
-    throw new Error(
-      'THIS API ROUTE IS INSECURE. DO NOT USE THIS ROUTE IN PRODUCTION WITHOUT AN AUTHENTICATION LAYER.'
-    );
+  // The upstream starter hard-throws here in production, because this route
+  // mints a room-join token to anyone who POSTs to it. That warning is correct:
+  // left open, a stranger can burn the project's LiveKit minutes.
+  //
+  // Rather than silencing it with IS_VERCEL_PREVIEW=true, the route is gated on
+  // a shared code supplied as ?code=... — a capability URL. The reviewer still
+  // clicks one link; an anonymous scanner gets a 403. This is deliberately
+  // modest: it is a demo access gate, not user authentication. A real
+  // deployment would issue tokens only to an authenticated session.
+  if (process.env.NODE_ENV !== 'development') {
+    if (!ACCESS_CODE) {
+      return new NextResponse(
+        'ROOM_ACCESS_CODE is not set. Refusing to mint unauthenticated tokens.',
+        { status: 500 }
+      );
+    }
+    const provided =
+      new URL(req.url).searchParams.get('code') ?? req.headers.get('x-access-code') ?? '';
+    if (!safeEqual(provided, ACCESS_CODE)) {
+      return new NextResponse('Forbidden: missing or invalid access code.', { status: 403 });
+    }
   }
 
   try {
